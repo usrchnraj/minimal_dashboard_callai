@@ -1,14 +1,15 @@
 // app/dashboard/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Phone, Check, AlertCircle, Clock, MapPin, ChevronRight, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {
+  // --- UI state (unchanged) ---
   const [selectedClinic, setSelectedClinic] = useState<any>(null);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
-  
+
   const [followUpScheduled, setFollowUpScheduled] = useState({
     'Sarah Henderson': true,
     'Emma Knight': false,
@@ -20,10 +21,16 @@ export default function DashboardPage() {
     'Elizabeth Clark': false,
   });
 
-  const currentDay = 'Thursday';
-  const currentTime = '1:00 PM';
+  const now = new Date();
+  const currentDay = now.toLocaleDateString('en-GB', { weekday: 'long' });
+  const currentTime = now.toLocaleTimeString('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 
-  const thisWeekClinics = [
+  // ---- STATIC FALLBACK DATA (your original arrays) ----
+  const fallbackThisWeekClinics = [
     {
       day: 'Tuesday',
       date: 'Oct 15',
@@ -58,7 +65,7 @@ export default function DashboardPage() {
     }
   ];
 
-  const nextWeekClinics = [
+  const fallbackNextWeekClinics = [
     {
       day: 'Tuesday',
       date: 'Oct 22',
@@ -90,6 +97,7 @@ export default function DashboardPage() {
     }
   ];
 
+  // ---- WEEK STATS (unchanged static for now) ----
   const thisWeekStats = {
     totalCalls: 20,
     newBookings: 7,
@@ -100,6 +108,37 @@ export default function DashboardPage() {
     needsFollowup: 8
   };
 
+  // ---- LIVE DATA TOGGLE + STATE (new, safe) ----
+  const useLiveData = process.env.NEXT_PUBLIC_USE_LIVE_DATA === 'true';
+  const [thisWeekClinics, setThisWeekClinics] = useState<any[]>([]);
+  const [nextWeekClinics, setNextWeekClinics] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!useLiveData) return; // don’t fetch in demo mode
+
+    async function fetchClinics() {
+      try {
+        const [completedRes, upcomingRes] = await Promise.all([
+          fetch('/api/clinics/completed', { cache: 'no-store' }),
+          fetch('/api/clinics/upcoming', { cache: 'no-store' }),
+        ]);
+        const completed = await completedRes.json();
+        const upcoming = await upcomingRes.json();
+
+        // Very defensive: only accept arrays
+        setThisWeekClinics(Array.isArray(completed) ? completed : []);
+        setNextWeekClinics(Array.isArray(upcoming) ? upcoming : []);
+      } catch (e) {
+        console.error('Error fetching clinics', e);
+        setThisWeekClinics([]);
+        setNextWeekClinics([]);
+      }
+    }
+
+    fetchClinics();
+  }, [useLiveData]);
+
+  // ---- Follow-up click (unchanged) ----
   const handleScheduleFollowup = (patientName: string) => {
     setFollowUpScheduled(prev => ({
       ...prev,
@@ -107,15 +146,22 @@ export default function DashboardPage() {
     }));
   };
 
-  // CLINIC DETAIL VIEW
+  // ============== CLINIC DETAIL VIEW (unchanged) ==============
   if (selectedClinic) {
     const clinic = selectedClinic;
     const isCompleted = clinic.status === 'completed';
-    
+
+    const formatInsurance = (insuranceCompany?: string, paymentMethod?: string) => {
+      if (insuranceCompany && insuranceCompany.trim() !== '') return insuranceCompany;
+      if (paymentMethod?.toLowerCase() === 'insurance') return 'Insurance';
+      if (paymentMethod?.toLowerCase() === 'self_pay') return 'Self-Pay';
+      return 'Self-Pay';
+    };
+
     return (
       <div className="min-h-screen bg-white p-6 md:p-12">
         <div className="max-w-3xl mx-auto">
-          <button 
+          <button
             onClick={() => setSelectedClinic(null)}
             className="text-gray-400 hover:text-gray-600 mb-8 text-sm font-light"
           >
@@ -147,7 +193,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="bg-teal-600 h-full transition-all"
                     style={{ width: `${(clinic.patientsBooked / clinic.slotsTotal) * 100}%` }}
                   />
@@ -174,7 +220,7 @@ export default function DashboardPage() {
             {clinic.patients.map((patient: any, idx: number) => (
               <button
                 key={idx}
-                onClick={() => setSelectedPatient({...patient, clinic: clinic.location, clinicDay: clinic.day, clinicDate: clinic.date})}
+                onClick={() => setSelectedPatient({ ...patient, clinic: clinic.location, clinicDay: clinic.day, clinicDate: clinic.date })}
                 className="w-full text-left group"
               >
                 <div className="flex items-start justify-between pb-4 border-b border-gray-100 group-hover:border-gray-300 transition-colors">
@@ -188,9 +234,9 @@ export default function DashboardPage() {
                       {patient.name}
                     </div>
                     <div className="text-base text-gray-500 font-light mb-2">
-                      {patient.reason} • {patient.insurance}
+                      {patient.reason} • {formatInsurance(patient.insurance_company, patient.payment_method)}
                     </div>
-                    
+
                     {isCompleted && patient.needsFollowup && (
                       <div className="mt-2">
                         {followUpScheduled[patient.name as keyof typeof followUpScheduled] ? (
@@ -198,15 +244,15 @@ export default function DashboardPage() {
                             MRI follow-up scheduled
                           </div>
                         ) : (
-                          <button 
+                          <span
                             onClick={(e) => {
                               e.stopPropagation();
                               handleScheduleFollowup(patient.name);
                             }}
-                            className="text-sm text-gray-900 font-light underline hover:text-teal-600"
+                            className="cursor-pointer text-sm text-gray-900 font-light underline hover:text-teal-600"
                           >
                             Need follow-up?
-                          </button>
+                          </span>
                         )}
                       </div>
                     )}
@@ -235,12 +281,12 @@ export default function DashboardPage() {
     );
   }
 
-  // PATIENT DETAIL VIEW
+  // ============== PATIENT DETAIL VIEW (unchanged) ==============
   if (selectedPatient) {
     return (
       <div className="min-h-screen bg-white p-6 md:p-12">
         <div className="max-w-2xl mx-auto">
-          <button 
+          <button
             onClick={() => setSelectedPatient(null)}
             className="text-gray-400 hover:text-gray-600 mb-8 text-sm font-light"
           >
@@ -307,7 +353,7 @@ export default function DashboardPage() {
                     <div className="text-lg font-light text-gray-900 mb-4">
                       MRI scan ready within 1 week
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleScheduleFollowup(selectedPatient.name)}
                       className="text-gray-900 hover:text-teal-600 font-light underline text-lg"
                     >
@@ -323,11 +369,14 @@ export default function DashboardPage() {
     );
   }
 
-  // HOME VIEW
+  // ============== HOME VIEW (unchanged visual; live-data aware) ==============
+  const displayThisWeek = useLiveData && thisWeekClinics.length > 0 ? thisWeekClinics : fallbackThisWeekClinics;
+  const displayNextWeek = useLiveData && nextWeekClinics.length > 0 ? nextWeekClinics : fallbackNextWeekClinics;
+
   return (
     <div className="min-h-screen bg-white p-6 md:p-12">
       <div className="max-w-3xl mx-auto">
-        
+
         <div className="mb-12">
           <div className="text-sm text-gray-400 uppercase tracking-wider mb-2">
             {currentDay} • {currentTime}
@@ -349,7 +398,7 @@ export default function DashboardPage() {
                 {thisWeekStats.totalCalls} calls handled this week
               </div>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-6 mb-8">
               <div>
                 <div className="text-4xl font-light text-gray-900 mb-1">
@@ -377,13 +426,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <Link 
-  href="/calls"
-  className="flex items-center gap-2 text-teal-600 hover:text-teal-700 font-light group"
->
-  <span>View all calls</span>
-  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-</Link>
+            <Link
+              href="/calls"
+              className="flex items-center gap-2 text-teal-600 hover:text-teal-700 font-light group"
+            >
+              <span>View all calls</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
           </div>
 
           {thisWeekStats.needsFollowup > 0 && (
@@ -401,9 +450,13 @@ export default function DashboardPage() {
           )}
 
           <div className="space-y-6">
-            {thisWeekClinics.map((clinic, idx) => {
-              const followupNeeded = clinic.patients.filter(p => p.needsFollowup && !followUpScheduled[p.name as keyof typeof followUpScheduled]).length;
-              
+            {displayThisWeek.map((clinic: any, idx: number) => {
+              // defensive: ensure array
+              const patients = Array.isArray(clinic.patients) ? clinic.patients : [];
+              const followupNeeded = patients.filter(
+                (p: any) => p.needsFollowup && !followUpScheduled[p.name as keyof typeof followUpScheduled]
+              ).length;
+
               return (
                 <button
                   key={idx}
@@ -424,7 +477,7 @@ export default function DashboardPage() {
                           <span>{clinic.location}</span>
                         </div>
                         <div className="text-base text-gray-500 font-light">
-                          {clinic.patients.length} patients • {clinic.patients.filter(p => p.attended).length} attended
+                          {patients.length} patients • {patients.filter((p: any) => p.attended).length} attended
                         </div>
                         {followupNeeded > 0 && (
                           <div className="mt-2 text-sm text-amber-600 font-light">
@@ -449,10 +502,14 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-6">
-            {nextWeekClinics.map((clinic, idx) => {
-              const unconfirmed = clinic.patients.filter(p => !p.confirmed).length;
-              const fillPercentage = Math.round((clinic.patientsBooked / clinic.slotsTotal) * 100);
-              
+            {displayNextWeek.map((clinic: any, idx: number) => {
+              const unconfirmed = Array.isArray(clinic.patients)
+                ? clinic.patients.filter((p: any) => !p.confirmed).length
+                : 0;
+              const booked = Number(clinic.patientsBooked || 0);
+              const total = Math.max(1, Number(clinic.slotsTotal || 0));
+              const fillPercentage = Math.round((booked / total) * 100);
+
               return (
                 <button
                   key={idx}
@@ -475,17 +532,17 @@ export default function DashboardPage() {
                         <div className="mb-3">
                           <div className="flex items-baseline gap-2 mb-2">
                             <div className="text-4xl font-light text-gray-900">
-                              {clinic.patientsBooked}
+                              {booked}
                             </div>
                             <div className="text-2xl text-gray-400 font-light">
-                              / {clinic.slotsTotal} slots
+                              / {total} slots
                             </div>
                             <div className="text-base text-gray-500 font-light">
                               ({fillPercentage}%)
                             </div>
                           </div>
                           <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                            <div 
+                            <div
                               className="bg-teal-600 h-full transition-all"
                               style={{ width: `${fillPercentage}%` }}
                             />
