@@ -1,7 +1,4 @@
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
-
-const sql = neon(process.env.DATABASE_URL!);
 
 function formatTimeRange(start: string | null, end: string | null) {
   if (!start || !end) return "";
@@ -15,7 +12,11 @@ function formatTimeRange(start: string | null, end: string | null) {
 }
 
 export async function GET() {
-  const rows = await sql`
+  // ✅ Lazy-load Neon only when executed at runtime
+  const { neon } = await import("@neondatabase/serverless");
+  const sql = neon(process.env.DATABASE_URL!);
+
+  const rows = await sql/* sql */`
     SELECT 
       a.clinic_id,
       a.appointment_date,
@@ -53,10 +54,11 @@ export async function GET() {
     }
 
     clinicsMap[key].patientsBooked++;
-    const insurance =
-      r.insurance_company ||
-      r.payment_method ||
-      "Self-Pay";
+
+    let insurance = "Self-Pay";
+    if (r.insurance_company && r.insurance_company.trim() !== "") insurance = r.insurance_company;
+    else if (r.payment_method?.toLowerCase() === "insurance") insurance = "Insurance";
+    else if (r.payment_method?.toLowerCase() === "self_pay") insurance = "Self-Pay";
 
     clinicsMap[key].patients.push({
       name: r.patient_name,
