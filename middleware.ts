@@ -15,6 +15,10 @@ export function middleware(req: NextRequest) {
       return NextResponse.next();
     }
   }
+  
+  if (process.env.NODE_ENV !== 'production') {
+  return NextResponse.next();
+  }
 
   return new Response("Authentication required", {
     status: 401,
