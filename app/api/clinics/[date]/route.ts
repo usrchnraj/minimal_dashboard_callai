@@ -1,6 +1,8 @@
-import { sql } from '@/lib/db';
-import { choose } from '@/lib/flags';
+import { NextResponse } from "next/server";
+import { sql } from "@/lib/db";
+import { choose } from "@/lib/flags";
 
+// --- Live query from Neon ---
 async function fetchLive(date: string) {
   const rows = await sql/* sql */`
     SELECT
@@ -17,14 +19,28 @@ async function fetchLive(date: string) {
   return rows;
 }
 
+// --- Demo fallback for local testing ---
 async function fetchDemo() {
   return [
-    { appointment_time: '17:00', status: 'completed', patient_name: 'Sarah Henderson', insurance_company: 'BUPA' },
-    { appointment_time: '17:20', status: 'completed', patient_name: 'James Mitchell', insurance_company: 'AXA' },
+    {
+      appointment_time: "17:00",
+      status: "completed",
+      patient_name: "Sarah Henderson",
+      insurance_company: "BUPA",
+    },
+    {
+      appointment_time: "17:20",
+      status: "completed",
+      patient_name: "James Mitchell",
+      insurance_company: "AXA",
+    },
   ];
 }
 
-export async function GET(_req: Request, { params }: { params: { date: string } }) {
-  const data = await choose(() => fetchLive(params.date), fetchDemo);
-  return Response.json(data);
+// --- Fixed handler (Next.js 15 compatible) ---
+export async function GET(request: Request, context: { params: { date: string } }) {
+  const { date } = context.params;
+
+  const data = await choose(() => fetchLive(date), fetchDemo);
+  return NextResponse.json(data);
 }
