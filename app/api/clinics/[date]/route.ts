@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
 import { choose } from "@/lib/flags";
 
 async function fetchLive(date: string) {
+  // 👇 dynamically import Neon only when called
+  const { neon } = await import("@neondatabase/serverless");
+  const sql = neon(process.env.DATABASE_URL!);
+
   const rows = await sql/* sql */`
     SELECT
       a.appointment_time,
@@ -15,6 +18,7 @@ async function fetchLive(date: string) {
     WHERE a.appointment_date = ${date}::date
     ORDER BY a.appointment_time;
   `;
+
   return rows;
 }
 
@@ -25,13 +29,14 @@ async function fetchDemo() {
   ];
 }
 
-// ✅ Updated for Next.js 15.5.x: no second argument typing
 export async function GET(request: Request) {
-  // extract the [date] param from the URL pathname
+  // Extract date from URL path (Next.js 15 style)
   const url = new URL(request.url);
   const segments = url.pathname.split("/");
   const date = segments[segments.length - 1];
 
+  // Run live Neon query or fallback demo
   const data = await choose(() => fetchLive(date), fetchDemo);
+
   return NextResponse.json(data);
 }
