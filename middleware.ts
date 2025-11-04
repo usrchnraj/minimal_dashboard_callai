@@ -1,32 +1,54 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+// middleware.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { verifySessionToken, authCookieName } from './lib/auth';
 
-export function middleware(req: NextRequest) {
-  const basicAuth = req.headers.get("authorization");
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
 
-  if (basicAuth) {
-    const authValue = basicAuth.split(" ")[1];
-    const [user, pwd] = atob(authValue).split(":");
-
-    if (
-      user === process.env.BASIC_AUTH_USER &&
-      pwd === process.env.BASIC_AUTH_PASS
-    ) {
-      return NextResponse.next();
-    }
+  // Allow static files, Next internals
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/assets')
+  ) {
+    return NextResponse.next();
   }
-  
-  if (process.env.NODE_ENV !== 'production') {
+
+  const isLoginRoute = pathname === '/login' || pathname === '/api/login';
+  const isPublicRoot = pathname === '/';
+
+  const token = req.cookies.get(authCookieName)?.value ?? null;
+  const session = token ? await verifySessionToken(token) : null;
+  const isAuthenticated = !!session;
+
+  // If user hits /login but is already authenticated -> send to dashboard
+  if (pathname === '/login' && isAuthenticated) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/dashboard';
+    return NextResponse.redirect(url);
+  }
+
+  // Root: decide where to send them based on auth
+  if (isPublicRoot) {
+    const url = req.nextUrl.clone();
+    url.pathname = isAuthenticated ? '/dashboard' : '/login';
+    return NextResponse.redirect(url);
+  }
+
+  // Protect /dashboard and /calls
+  const isProtectedRoute =
+    pathname.startsWith('/dashboard') || pathname.startsWith('/calls');
+
+  if (isProtectedRoute && !isAuthenticated) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
+
   return NextResponse.next();
-  }
-
-  return new Response("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Secure Area"' },
-  });
 }
 
-// Adjust the matcher depending on what you want protected
+// Routes that go through this middleware
 export const config = {
-  matcher: ["/"], // protects the entire site
+  matcher: ['/dashboard/:path*', '/calls/:path*', '/login', '/'],
 };

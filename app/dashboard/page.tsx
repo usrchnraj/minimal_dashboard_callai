@@ -4,9 +4,12 @@
 import React, { useEffect, useState } from 'react';
 import { Phone, Check, AlertCircle, Clock, MapPin, ChevronRight, Calendar } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  // --- UI state (unchanged) ---
+  const router = useRouter();
+
+    // --- UI state (unchanged) ---
   const [selectedClinic, setSelectedClinic] = useState<any>(null);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
 
@@ -21,6 +24,41 @@ export default function DashboardPage() {
     'Elizabeth Clark': false,
   });
 
+  const [thisWeekClinics, setThisWeekClinics] = useState<any[]>([]);
+  const [nextWeekClinics, setNextWeekClinics] = useState<any[]>([]);
+
+  // ---- LIVE DATA TOGGLE + STATE (new, safe) ----
+  const useLiveData = process.env.NEXT_PUBLIC_USE_LIVE_DATA === 'true';
+  useEffect(() => {
+  if (!useLiveData) return; // don’t fetch in demo mode
+
+  async function fetchClinics() {
+    try {
+      const [completedRes, upcomingRes] = await Promise.all([
+        fetch('/api/clinics/completed', { cache: 'no-store' }),
+        fetch('/api/clinics/upcoming', { cache: 'no-store' }),
+      ]);
+      const completed = await completedRes.json();
+      const upcoming = await upcomingRes.json();
+
+      // Very defensive: only accept arrays
+      setThisWeekClinics(Array.isArray(completed) ? completed : []);
+      setNextWeekClinics(Array.isArray(upcoming) ? upcoming : []);
+    } catch (e) {
+      console.error('Error fetching clinics', e);
+      setThisWeekClinics([]);
+      setNextWeekClinics([]);
+    }
+  }
+
+  fetchClinics();
+}, [useLiveData]);
+
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    router.replace('/login');
+  };
+  
   const now = new Date();
   const currentDay = now.toLocaleDateString('en-GB', { weekday: 'long' });
   const currentTime = now.toLocaleTimeString('en-GB', {
@@ -109,34 +147,9 @@ export default function DashboardPage() {
   };
 
   // ---- LIVE DATA TOGGLE + STATE (new, safe) ----
-  const useLiveData = process.env.NEXT_PUBLIC_USE_LIVE_DATA === 'true';
-  const [thisWeekClinics, setThisWeekClinics] = useState<any[]>([]);
-  const [nextWeekClinics, setNextWeekClinics] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!useLiveData) return; // don’t fetch in demo mode
-
-    async function fetchClinics() {
-      try {
-        const [completedRes, upcomingRes] = await Promise.all([
-          fetch('/api/clinics/completed', { cache: 'no-store' }),
-          fetch('/api/clinics/upcoming', { cache: 'no-store' }),
-        ]);
-        const completed = await completedRes.json();
-        const upcoming = await upcomingRes.json();
-
-        // Very defensive: only accept arrays
-        setThisWeekClinics(Array.isArray(completed) ? completed : []);
-        setNextWeekClinics(Array.isArray(upcoming) ? upcoming : []);
-      } catch (e) {
-        console.error('Error fetching clinics', e);
-        setThisWeekClinics([]);
-        setNextWeekClinics([]);
-      }
-    }
-
-    fetchClinics();
-  }, [useLiveData]);
+  // const useLiveData = process.env.NEXT_PUBLIC_USE_LIVE_DATA === 'true';
+  // const [thisWeekClinics, setThisWeekClinics] = useState<any[]>([]);
+  // const [nextWeekClinics, setNextWeekClinics] = useState<any[]>([]);
 
   // ---- Follow-up click (unchanged) ----
   const handleScheduleFollowup = (patientName: string) => {
@@ -375,6 +388,14 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-white p-6 md:p-12">
+    <div className="flex justify-end mb-4">
+      <button
+        onClick={handleLogout}
+        className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-full px-3 py-1"
+      >
+        Log out
+      </button>
+    </div>
       <div className="max-w-3xl mx-auto">
 
         <div className="mb-12">
