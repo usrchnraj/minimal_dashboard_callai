@@ -25,6 +25,8 @@ export async function GET() {
       a.payment_method,
       c.name AS clinic_name,
       p.name AS patient_name,
+      p.phone AS patient_phone,
+      p.email AS patient_email,
       p.reason_for_visit,
       cs.start_time,
       cs.end_time
@@ -65,6 +67,8 @@ export async function GET() {
       reason: r.reason_for_visit || "Consultation",
       insurance,
       confirmed: true,
+      phone: r.patient_phone,
+      email: r.patient_email,
     });
   }
 
