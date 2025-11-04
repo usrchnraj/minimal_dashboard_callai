@@ -12,31 +12,69 @@ function formatTimeRange(start: string | null, end: string | null) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export async function GET() {
-  // ✅ Lazy-load Neon only when executed at runtime
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const mode = url.searchParams.get("mode"); // 'lastweek' or 'all'
+
   const { neon } = await import("@neondatabase/serverless");
   const sql = neon(process.env.DATABASE_URL!);
 
-  const rows = await sql/* sql */`
-    SELECT 
-      a.clinic_id,
-      a.appointment_date,
-      a.appointment_time,
-      a.insurance_company,
-      a.payment_method,
-      c.name AS clinic_name,
-      p.name AS patient_name,
-      p.reason_for_visit,
-      cs.start_time,
-      cs.end_time
-    FROM appointments a
-    JOIN clinics c ON a.clinic_id = c.id
-    JOIN patients p ON a.patient_id = p.id
-    LEFT JOIN clinic_schedule cs ON cs.clinic_id = c.id
-    WHERE a.appointment_date <= CURRENT_DATE
-    ORDER BY a.appointment_date ASC, a.appointment_time ASC
-    LIMIT 50;
-  `;
+  let rows;
+
+  if (mode === "lastweek") {
+    // ✅ Get only the two most recent distinct clinic dates (Tue + Wed only)
+    rows = await sql/* sql */`
+      WITH recent_clinic_dates AS (
+        SELECT DISTINCT appointment_date
+        FROM appointments
+        WHERE appointment_date <= CURRENT_DATE
+          AND EXTRACT(DOW FROM appointment_date) IN (2,3)
+        ORDER BY appointment_date DESC
+        LIMIT 2
+      )
+      SELECT 
+        a.clinic_id,
+        a.appointment_date,
+        a.appointment_time,
+        a.insurance_company,
+        a.payment_method,
+        c.name AS clinic_name,
+        p.name AS patient_name,
+        p.phone AS patient_phone,
+        p.email AS patient_email,
+        p.reason_for_visit,
+        cs.start_time,
+        cs.end_time
+      FROM appointments a
+      JOIN clinics c ON a.clinic_id = c.id
+      JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN clinic_schedule cs ON cs.clinic_id = c.id
+      WHERE a.appointment_date IN (SELECT appointment_date FROM recent_clinic_dates) AND a.status IN ('confirmed', 'completed', 'scheduled')
+      ORDER BY a.appointment_date ASC, a.appointment_time ASC;
+    `;
+  } else {
+    // 📜 Full historical completed list
+    rows = await sql/* sql */`
+      SELECT 
+        a.clinic_id,
+        a.appointment_date,
+        a.appointment_time,
+        a.insurance_company,
+        a.payment_method,
+        c.name AS clinic_name,
+        p.name AS patient_name,
+        p.reason_for_visit,
+        cs.start_time,
+        cs.end_time
+      FROM appointments a
+      JOIN clinics c ON a.clinic_id = c.id
+      JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN clinic_schedule cs ON cs.clinic_id = c.id
+      WHERE a.appointment_date <= CURRENT_DATE AND a.status IN ('confirmed', 'completed', 'scheduled')
+      ORDER BY a.appointment_date ASC, a.appointment_time ASC
+      LIMIT 100;
+    `;
+  }
 
   const clinicsMap: Record<string, any> = {};
   for (const r of rows) {
@@ -64,10 +102,15 @@ export async function GET() {
       insurance,
       attended: true,
       needsFollowup: Math.random() > 0.6,
+      phone: r.patient_phone,
+      email: r.patient_email,
+      appointment_time: r.appointment_time,
     });
+
   }
 
   return NextResponse.json(Object.values(clinicsMap));
 }
+
 
 

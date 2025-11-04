@@ -6,6 +6,15 @@ import { Phone, Check, AlertCircle, Clock, MapPin, ChevronRight, Calendar } from
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+function formatTo12Hour(time: string | null | undefined) {
+  if (!time) return "";
+  const [hours, minutes] = time.split(":").map(Number);
+  const period = hours >= 12 ? "PM" : "AM";
+  const hr = ((hours + 11) % 12) + 1;
+  const min = minutes?.toString().padStart(2, "0") ?? "00";
+  return `${hr}:${min} ${period}`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -24,8 +33,15 @@ export default function DashboardPage() {
     'Elizabeth Clark': false,
   });
 
+  // track which option each patient selected
+  const [selectedPatientStatus, setSelectedPatientStatus] = useState<Record<string, string | null>>({});
+
   const [thisWeekClinics, setThisWeekClinics] = useState<any[]>([]);
   const [nextWeekClinics, setNextWeekClinics] = useState<any[]>([]);
+  const [showAllClinics, setShowAllClinics] = useState(false);
+  const [thisWeekClinicsFull, setThisWeekClinicsFull] = useState<any[]>([]);
+
+
 
   // ---- LIVE DATA TOGGLE + STATE (new, safe) ----
   const useLiveData = process.env.NEXT_PUBLIC_USE_LIVE_DATA === 'true';
@@ -34,11 +50,40 @@ export default function DashboardPage() {
 
   async function fetchClinics() {
     try {
+      const mode = showAllClinics ? "all" : "lastweek";
       const [completedRes, upcomingRes] = await Promise.all([
-        fetch('/api/clinics/completed', { cache: 'no-store' }),
+        fetch(`/api/clinics/completed?mode=${mode}`, { cache: "no-store" }),
         fetch('/api/clinics/upcoming', { cache: 'no-store' }),
       ]);
       const completed = await completedRes.json();
+
+
+      function filterLastWeekClinics(allClinics: any[]) {
+        return allClinics.filter((clinic: any) => {
+          const clinicDate = new Date(clinic.appointment_date || clinic.date);
+          const today = new Date();
+          const day = clinicDate.getDay(); // 0=Sun, 1=Mon, 2=Tue, etc.
+
+          const mondayThisWeek = new Date(today);
+          mondayThisWeek.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+          const mondayLastWeek = new Date(mondayThisWeek);
+          mondayLastWeek.setDate(mondayThisWeek.getDate() - 7);
+          const sundayLastWeek = new Date(mondayLastWeek);
+          sundayLastWeek.setDate(mondayLastWeek.getDate() + 6);
+
+          return (
+            clinicDate >= mondayLastWeek &&
+            clinicDate <= sundayLastWeek &&
+            (day === 2 || day === 3)
+          );
+        });
+      }
+      // ✅ Filter completed clinics → only last week (Tue & Wed)
+      const filteredCompleted = filterLastWeekClinics(completed);
+      setThisWeekClinicsFull(Array.isArray(completed) ? completed : []);
+      setThisWeekClinics(Array.isArray(filteredCompleted) ? filteredCompleted : []);
+
+
       const upcoming = await upcomingRes.json();
 
       // Very defensive: only accept arrays
@@ -52,13 +97,13 @@ export default function DashboardPage() {
   }
 
   fetchClinics();
-}, [useLiveData]);
+}, [useLiveData, showAllClinics]);
 
   const handleLogout = async () => {
     await fetch('/api/logout', { method: 'POST' });
     router.replace('/login');
   };
-  
+
   const now = new Date();
   const currentDay = now.toLocaleDateString('en-GB', { weekday: 'long' });
   const currentTime = now.toLocaleTimeString('en-GB', {
@@ -159,6 +204,115 @@ export default function DashboardPage() {
     }));
   };
 
+  // ============== PATIENT DETAIL VIEW (unchanged) ==============
+  if (selectedPatient) {
+    return (
+      <div className="min-h-screen bg-white p-6 md:p-12">
+        <div className="max-w-2xl mx-auto">
+          <button
+            onClick={() => setSelectedPatient(null)}
+            className="text-gray-400 hover:text-gray-600 mb-8 text-sm font-light"
+          >
+            ← Back
+          </button>
+
+          <div className="space-y-12">
+            <div>
+              <div className="text-5xl font-light text-gray-900 mb-2">
+                {selectedPatient.name}
+              </div>
+              <div className="text-xl text-gray-400 font-light">
+                {selectedPatient.age} years old
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Appointment */}
+              <div>
+                <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Appointment</div>
+                <div className="text-2xl font-light text-gray-900">
+                  {selectedPatient.clinicDate} • {selectedPatient.clinicDay}
+                </div>
+                <div className="text-xl text-gray-500 font-light mt-1">
+                  {formatTo12Hour(selectedPatient.appointmentTime || selectedPatient.time)} • {selectedPatient.clinic}
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Reason</div>
+                <div className="text-2xl font-light text-gray-900">
+                  {selectedPatient.reason}
+                </div>
+              </div>
+
+              {/* Insurance + Type */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Insurance</div>
+                  <div className="text-xl font-light text-gray-900">
+                    {selectedPatient.insurance}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Type</div>
+                  <div className="text-xl font-light text-gray-900">
+                    {selectedPatient.type}
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Details */}
+              <div className="grid grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+                <div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Phone Number</div>
+                  <div className="text-xl font-light text-gray-900">
+                    {selectedPatient.phone || "Not provided"}
+                  </div>
+                </div>
+                {selectedPatient.email && (
+                  <div>
+                    <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Email ID</div>
+                    <div className="text-xl font-light text-gray-900">
+                      {selectedPatient.email}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {selectedPatient.needsFollowup && (
+              <div className="pt-8 border-t border-gray-100">
+                {followUpScheduled[selectedPatient.name as keyof typeof followUpScheduled] ? (
+                  <div className="bg-teal-50 -mx-6 px-6 py-6 rounded-lg">
+                    <div className="text-lg text-teal-600 font-light">
+                      ✓ MRI follow-up scheduled
+                    </div>
+                    <div className="text-base text-gray-600 font-light mt-2">
+                      AI will call patient next week to book review appointment
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-lg font-light text-gray-900 mb-4">
+                      MRI scan ready within 1 week
+                    </div>
+                    <button
+                      onClick={() => handleScheduleFollowup(selectedPatient.name)}
+                      className="text-gray-900 hover:text-teal-600 font-light underline text-lg"
+                    >
+                      Need follow-up?
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ============== CLINIC DETAIL VIEW (unchanged) ==============
   if (selectedClinic) {
     const clinic = selectedClinic;
@@ -233,7 +387,7 @@ export default function DashboardPage() {
             {clinic.patients.map((patient: any, idx: number) => (
               <button
                 key={idx}
-                onClick={() => setSelectedPatient({ ...patient, clinic: clinic.location, clinicDay: clinic.day, clinicDate: clinic.date })}
+                onClick={() => setSelectedPatient({ ...patient, clinic: clinic.location, clinicDay: clinic.day, clinicDate: clinic.date, appointmentTime: patient.appointment_time, })}
                 className="w-full text-left group"
               >
                 <div className="flex items-start justify-between pb-4 border-b border-gray-100 group-hover:border-gray-300 transition-colors">
@@ -250,25 +404,44 @@ export default function DashboardPage() {
                       {patient.reason} • {formatInsurance(patient.insurance_company, patient.payment_method)}
                     </div>
 
-                    {isCompleted && patient.needsFollowup && (
-                      <div className="mt-2">
-                        {followUpScheduled[patient.name as keyof typeof followUpScheduled] ? (
-                          <div className="text-sm text-teal-600 font-light">
-                            MRI follow-up scheduled
-                          </div>
-                        ) : (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleScheduleFollowup(patient.name);
-                            }}
-                            className="cursor-pointer text-sm text-gray-900 font-light underline hover:text-teal-600"
-                          >
-                            Need follow-up?
-                          </span>
-                        )}
+                    {isCompleted && (
+                      <div className="mt-2 flex gap-4 text-sm font-light">
+                        {["followup", "no_followup", "no_show"].map((status) => {
+                          const isSelected = selectedPatientStatus[patient.name] === status;
+                          const baseStyle = "cursor-pointer underline transition-colors";
+                          let color = "text-gray-400 hover:text-gray-600";
+
+                          if (isSelected) {
+                            if (status === "followup") color = "text-teal-600 font-medium";
+                            if (status === "no_followup") color = "text-gray-600 font-medium";
+                            if (status === "no_show") color = "text-red-500 font-medium";
+                          }
+
+                          const labelMap: Record<string, string> = {
+                            followup: "Need follow-up?",
+                            no_followup: "No follow-up required",
+                            no_show: "No show",
+                          };
+
+                          return (
+                            <span
+                              key={status}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPatientStatus((prev) => ({
+                                  ...prev,
+                                  [patient.name]: prev[patient.name] === status ? null : status,
+                                }));
+                              }}
+                              className={`${baseStyle} ${color}`}
+                            >
+                              {labelMap[status]}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
+
                   </div>
                   <div>
                     {isCompleted ? (
@@ -294,96 +467,13 @@ export default function DashboardPage() {
     );
   }
 
-  // ============== PATIENT DETAIL VIEW (unchanged) ==============
-  if (selectedPatient) {
-    return (
-      <div className="min-h-screen bg-white p-6 md:p-12">
-        <div className="max-w-2xl mx-auto">
-          <button
-            onClick={() => setSelectedPatient(null)}
-            className="text-gray-400 hover:text-gray-600 mb-8 text-sm font-light"
-          >
-            ← Back
-          </button>
-
-          <div className="space-y-12">
-            <div>
-              <div className="text-5xl font-light text-gray-900 mb-2">
-                {selectedPatient.name}
-              </div>
-              <div className="text-xl text-gray-400 font-light">
-                {selectedPatient.age} years old
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Appointment</div>
-                <div className="text-2xl font-light text-gray-900">
-                  {selectedPatient.clinicDate} • {selectedPatient.clinicDay}
-                </div>
-                <div className="text-xl text-gray-500 font-light mt-1">
-                  {selectedPatient.time} • {selectedPatient.clinic}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Reason</div>
-                <div className="text-2xl font-light text-gray-900">
-                  {selectedPatient.reason}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Insurance</div>
-                  <div className="text-xl font-light text-gray-900">
-                    {selectedPatient.insurance}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">Type</div>
-                  <div className="text-xl font-light text-gray-900">
-                    {selectedPatient.type}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {selectedPatient.needsFollowup && (
-              <div className="pt-8 border-t border-gray-100">
-                {followUpScheduled[selectedPatient.name as keyof typeof followUpScheduled] ? (
-                  <div className="bg-teal-50 -mx-6 px-6 py-6 rounded-lg">
-                    <div className="text-lg text-teal-600 font-light">
-                      ✓ MRI follow-up scheduled
-                    </div>
-                    <div className="text-base text-gray-600 font-light mt-2">
-                      AI will call patient next week to book review appointment
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="text-lg font-light text-gray-900 mb-4">
-                      MRI scan ready within 1 week
-                    </div>
-                    <button
-                      onClick={() => handleScheduleFollowup(selectedPatient.name)}
-                      className="text-gray-900 hover:text-teal-600 font-light underline text-lg"
-                    >
-                      Need follow-up?
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // ============== HOME VIEW (unchanged visual; live-data aware) ==============
-  const displayThisWeek = useLiveData && thisWeekClinics.length > 0 ? thisWeekClinics : fallbackThisWeekClinics;
+  const displayThisWeek =
+  showAllClinics
+    ? thisWeekClinicsFull
+    : useLiveData && thisWeekClinics.length > 0
+    ? thisWeekClinics
+    : fallbackThisWeekClinics;
   const displayNextWeek = useLiveData && nextWeekClinics.length > 0 ? nextWeekClinics : fallbackNextWeekClinics;
 
   return (
@@ -470,6 +560,17 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* 🔘 Toggle Historical Clinics */}
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => setShowAllClinics((prev: boolean) => !prev)}
+              className="text-sm text-teal-600 hover:text-teal-700 border border-teal-200 rounded-full px-4 py-1 font-light transition-colors"
+            >
+              {showAllClinics ? 'Hide previous weeks' : 'Previous weeks list'}
+            </button>
+          </div>
+
+
           <div className="space-y-6">
             {displayThisWeek.map((clinic: any, idx: number) => {
               // defensive: ensure array
@@ -477,7 +578,7 @@ export default function DashboardPage() {
               const followupNeeded = patients.filter(
                 (p: any) => p.needsFollowup && !followUpScheduled[p.name as keyof typeof followUpScheduled]
               ).length;
-
+              
               return (
                 <button
                   key={idx}
@@ -487,31 +588,34 @@ export default function DashboardPage() {
                   <div className="pb-6 border-b border-gray-100 group-hover:border-gray-300 transition-colors">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <div className="text-2xl font-light text-gray-900 mb-2 group-hover:text-teal-600 transition-colors">
-                          {clinic.date} • {clinic.day}
+                        <div className="flex items-center gap-2 mb-1">
+                          <MapPin className="w-4 h-4 text-gray-500" />
+                        <div className="text-xl font-light text-gray-900 group-hover:text-teal-600 transition-colors">
+                          {clinic.location}
                         </div>
-                        <div className="text-lg text-gray-500 font-light mb-2">
-                          {clinic.time}
-                        </div>
-                        <div className="flex items-center gap-2 text-base text-gray-500 font-light mb-2">
-                          <MapPin className="w-4 h-4" />
-                          <span>{clinic.location}</span>
-                        </div>
-                        <div className="text-base text-gray-500 font-light">
-                          {patients.length} patients • {patients.filter((p: any) => p.attended).length} attended
-                        </div>
-                        {followupNeeded > 0 && (
-                          <div className="mt-2 text-sm text-amber-600 font-light">
-                            {followupNeeded} need follow-up
-                          </div>
-                        )}
                       </div>
-                      <div>
-                        <Check className="w-6 h-6 text-teal-600" />
+
+                      <div className="text-base text-gray-500 font-light mb-1">
+                        {clinic.date} • {clinic.day} {clinic.time}
                       </div>
+                      <div className="text-base text-gray-500 font-light">
+                        {patients.length} attended • {patients.filter((p: any) => !p.attended).length} cancelled
+                      </div>
+
+                      {followupNeeded > 0 && (
+                        <div className="mt-1 text-sm text-amber-600 font-light">
+                          {followupNeeded} need follow-up
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ✅ Completed Badge */}
+                    <div className="bg-teal-50 text-teal-700 text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Completed
                     </div>
                   </div>
-                </button>
+                </div>
+              </button>
               );
             })}
           </div>
@@ -530,6 +634,62 @@ export default function DashboardPage() {
               const booked = Number(clinic.patientsBooked || 0);
               const total = Math.max(1, Number(clinic.slotsTotal || 0));
               const fillPercentage = Math.round((booked / total) * 100);
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedClinic(clinic)}
+                  className="w-full text-left group"
+                >
+                  <div className="pb-6 border-b border-gray-100 group-hover:border-gray-300 transition-colors">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <MapPin className="w-4 h-4 text-gray-500" />
+                          <div className="text-xl font-light text-gray-900 group-hover:text-teal-600 transition-colors">
+                            {clinic.location}
+                          </div>
+                        </div>
+
+                        <div className="text-base text-gray-500 font-light mb-2">
+                          {clinic.date} • {clinic.day} {clinic.time}
+                        </div>
+
+                        <div className="flex items-baseline gap-2 mb-2">
+                        <div className="text-4xl font-light text-gray-900">
+                          {booked}
+                        </div>
+                        <div className="text-2xl text-gray-400 font-light">
+                          / {total} slots
+                        </div>
+                        <div className="text-base text-gray-500 font-light">
+                          ({fillPercentage}%)
+                        </div>
+                      </div>
+
+                      <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden mb-1">
+                        <div
+                          className="bg-teal-600 h-full transition-all"
+                          style={{ width: `${fillPercentage}%` }}
+                      />
+                      </div>
+
+                      {unconfirmed > 0 && (
+                        <div className="text-sm text-amber-600 font-light">
+                          {unconfirmed} not confirmed yet
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ⏱ Upcoming Badge */}
+                    <div className="bg-amber-50 text-amber-600 text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Upcoming
+                      </div>
+                      </div>
+                      </div>
+                      </button>
+                    );
+
 
               return (
                 <button
