@@ -1,12 +1,40 @@
 // app/calls/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Phone, Check, X, Clock, ArrowLeft, PlayCircle, Calendar } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+const AUTH_KEY = 'sarga-dashboard-auth-v1';
 
 export default function CallsPage() {
+  const router = useRouter();
+  const [isReady, setIsReady] = useState(false);
   const [selectedCall, setSelectedCall] = useState<any>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const loggedIn = localStorage.getItem(AUTH_KEY) === 'true';
+    if (!loggedIn) {
+      router.replace('/login');
+    } else {
+      setIsReady(true);
+    }
+  }, [router]);
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem('sarga-dashboard-username');
+    }
+    router.replace('/login');
+  };
+
+  if (!isReady) {
+    return null;
+  }
 
   // Call data with outcomes
   const calls = [
@@ -174,6 +202,15 @@ export default function CallsPage() {
   if (selectedCall) {
     return (
       <div className="min-h-screen bg-white p-6 md:p-12">
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={handleLogout}
+          className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-full px-3 py-1"
+        >
+         Log out
+       </button>
+      </div>
+
         <div className="max-w-2xl mx-auto">
           <button 
             onClick={() => setSelectedCall(null)}

@@ -25,6 +25,8 @@ export async function GET() {
       a.payment_method,
       c.name AS clinic_name,
       p.name AS patient_name,
+      p.phone AS patient_phone,
+      p.email AS patient_email,
       p.reason_for_visit,
       cs.start_time,
       cs.end_time
@@ -32,8 +34,7 @@ export async function GET() {
     JOIN clinics c ON a.clinic_id = c.id
     JOIN patients p ON a.patient_id = p.id
     LEFT JOIN clinic_schedule cs ON cs.clinic_id = c.id
-    WHERE a.appointment_date > CURRENT_DATE
-    ORDER BY a.appointment_date ASC, a.appointment_time ASC
+    WHERE a.appointment_date > CURRENT_DATE AND a.status IN ('confirmed', 'completed', 'scheduled')
     LIMIT 50;
   `;
 
@@ -66,6 +67,8 @@ export async function GET() {
       reason: r.reason_for_visit || "Consultation",
       insurance,
       confirmed: true,
+      phone: r.patient_phone,
+      email: r.patient_email,
     });
   }
 
