@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { Phone, Check, X, Clock, ArrowLeft, PlayCircle, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { checkSession } from '@/lib/session-client';
 
 const AUTH_KEY = 'sarga-dashboard-auth-v1';
 
@@ -14,15 +15,14 @@ export default function CallsPage() {
   const [selectedCall, setSelectedCall] = useState<any>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const loggedIn = localStorage.getItem(AUTH_KEY) === 'true';
-    if (!loggedIn) {
-      router.replace('/login');
-    } else {
-      setIsReady(true);
+    async function verify() {
+      const valid = await checkSession();
+      if (valid) setIsReady(true);
+      else router.replace('/login');
     }
+    verify();
   }, [router]);
+
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
