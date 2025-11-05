@@ -38,6 +38,13 @@ export async function GET() {
     LIMIT 50;
   `;
 
+    function normalizeClinicName(name: string): string {
+      const lower = name.toLowerCase();
+      if (lower.includes("princess grace")) return "Princess Grace Hospital";
+      if (lower.includes("london clinic")) return "The London Clinic";
+      return name.trim();
+    }
+
   const clinicsMap: Record<string, any> = {};
   for (const r of rows) {
     const key = `${r.clinic_id}-${r.appointment_date}`;
@@ -46,7 +53,7 @@ export async function GET() {
         day: new Date(r.appointment_date).toLocaleDateString("en-GB", { weekday: "long" }),
         date: new Date(r.appointment_date).toLocaleDateString("en-GB", { month: "short", day: "numeric" }),
         time: formatTimeRange(r.start_time, r.end_time),
-        location: r.clinic_name,
+        location: normalizeClinicName(r.clinic_name),
         status: "upcoming",
         patientsBooked: 0,
         slotsTotal: 9,
